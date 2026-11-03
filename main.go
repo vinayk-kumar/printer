@@ -15,6 +15,7 @@ Usage:
   print-agent install      Set up mailbox + printer and start in the background
                            (run again to change settings)
   print-agent status       Show settings, printer and recent activity
+  print-agent printers     List the printers installed on this computer
   print-agent test-print   Print a test page
   print-agent uninstall    Stop and remove the agent (--purge also deletes settings)
   print-agent run          Run in the foreground (used by the background service)
@@ -23,7 +24,9 @@ Usage:
 Install options (otherwise you are asked):
   --email EMAIL            Mailbox that receives the print emails
   --password PASSWORD      App password (or set PRINT_AGENT_PASSWORD)
-  --printer-ip IP          Printer IP address, e.g. 192.168.1.50
+  --printer NAME           Use a printer installed on this computer (USB or network),
+                           as listed by "print-agent printers"
+  --printer-ip IP          Or: a network printer's IP address, e.g. 192.168.1.50
   --imap-host HOST         Mail server (auto-detected for Gmail, Yahoo, Zoho)
   --allowed-senders LIST   Comma-separated senders allowed to print (default: anyone)
   --poll-seconds N         How often to check the mailbox (default 15)
@@ -43,6 +46,8 @@ func main() {
 		err = runAgent()
 	case "status":
 		err = cmdStatus()
+	case "printers":
+		err = cmdPrinters()
 	case "test-print":
 		err = cmdTestPrint()
 	case "uninstall":

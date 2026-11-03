@@ -21,6 +21,7 @@ func cmdInstall(args []string) error {
 	email := fs.String("email", "", "")
 	password := fs.String("password", "", "")
 	printerIP := fs.String("printer-ip", "", "")
+	printerName := fs.String("printer", "", "")
 	imapHost := fs.String("imap-host", "", "")
 	allowed := fs.String("allowed-senders", "", "")
 	poll := fs.Int("poll-seconds", 0, "")
@@ -43,8 +44,14 @@ func cmdInstall(args []string) error {
 	fmt.Println("Press Enter to keep the value shown in [brackets].")
 	fmt.Println()
 
+	printers, err := listPrinters()
+	if err != nil {
+		return err
+	}
 	c := &Config{}
-	c.PrinterIP = in.ask("Printer IP address", *printerIP, old.PrinterIP)
+	if c.PrinterIP, c.PrinterName, err = choosePrinter(in, *printerIP, *printerName, old, printers); err != nil {
+		return err
+	}
 	c.Email = in.ask("Mailbox email", *email, old.Email)
 	sameMailbox := strings.EqualFold(c.Email, old.Email)
 	c.Password = in.askSecret("App password", *password, ifThen(sameMailbox, old.Password))
@@ -62,8 +69,8 @@ func cmdInstall(args []string) error {
 	} else if old.PollSeconds >= 5 {
 		c.PollSeconds = old.PollSeconds
 	}
-	if c.PrinterIP == "" || c.Email == "" || !strings.Contains(c.Email, "@") || c.Password == "" {
-		return errors.New("printer IP, mailbox email and app password are required (run in a terminal, or pass --printer-ip, --email and --password)")
+	if (c.PrinterIP == "" && c.PrinterName == "") || c.Email == "" || !strings.Contains(c.Email, "@") || c.Password == "" {
+		return errors.New("a printer, mailbox email and app password are required (run in a terminal, or pass --printer or --printer-ip, --email and --password)")
 	}
 	fmt.Println()
 
@@ -75,19 +82,30 @@ func cmdInstall(args []string) error {
 	}
 	fmt.Printf("✓ (%d emails already there will not be printed)\n", n)
 
-	step("Checking printer " + c.PrinterIP)
-	if err := printerReachable(c.PrinterIP); err != nil {
-		fmt.Println("✗")
-		return fmt.Errorf("printer not reachable: %v\n  This computer must be on the same network (Wi-Fi/LAN) as the printer", err)
-	}
-	fmt.Println("✓")
+	if c.PrinterIP != "" {
+		step("Checking printer " + c.PrinterIP)
+		if err := printerReachable(c.PrinterIP); err != nil {
+			fmt.Println("✗")
+			return fmt.Errorf("printer not reachable: %v\n  This computer must be on the same network (Wi-Fi/LAN) as the printer", err)
+		}
+		fmt.Println("✓")
 
-	step("Adding printer to this computer")
-	if c.PrinterName, err = setupPrinter(c.PrinterIP); err != nil {
-		fmt.Println("✗")
-		return err
+		step("Adding printer to this computer")
+		if c.PrinterName, err = setupPrinter(c.PrinterIP); err != nil {
+			fmt.Println("✗")
+			return err
+		}
+		fmt.Printf("✓ (%s)\n", c.PrinterName)
+	} else {
+		step("Checking printer " + c.PrinterName)
+		p, ok := findPrinter(printers, c.PrinterName)
+		if !ok {
+			fmt.Println("✗")
+			return fmt.Errorf("no printer called %q on this computer. See the list with: print-agent printers", c.PrinterName)
+		}
+		c.PrinterName = p.Name
+		fmt.Printf("✓ (%s)\n", p.Connection)
 	}
-	fmt.Printf("✓ (%s)\n", c.PrinterName)
 
 	step("Starting background agent")
 	_ = stopService()
@@ -108,13 +126,73 @@ func cmdInstall(args []string) error {
 
 	fmt.Printf(`
 Done! Emails with a PDF, JPG or PNG attached sent to %s
-will now print on the printer at %s.
+will now print on %s.
 
   Check status : %s status
   Test page    : %s test-print
   Change setup : run the install command again
   Remove       : %s uninstall
-`, c.Email, c.PrinterIP, exe, exe, exe)
+`, c.Email, printerLabel(c), exe, exe, exe)
+	return nil
+}
+
+// choosePrinter asks for an installed printer (by number) or a network
+// printer's IP. Returns the IP to add, or the installed printer's name.
+func choosePrinter(in *prompter, ipFlag, nameFlag string, old *Config, printers []printerInfo) (string, string, error) {
+	if ipFlag != "" {
+		return strings.TrimSpace(ipFlag), "", nil
+	}
+	if nameFlag != "" {
+		return "", strings.TrimSpace(nameFlag), nil
+	}
+	if !in.interactive {
+		return old.PrinterIP, ifThen(old.PrinterIP == "", old.PrinterName), nil
+	}
+	if len(printers) > 0 {
+		fmt.Println("Printers on this computer:")
+		for i, p := range printers {
+			fmt.Printf("  %d) %-34s %s\n", i+1, p.Name, p.Connection)
+		}
+	} else {
+		fmt.Println("No printers are installed on this computer yet.")
+		fmt.Println("USB printer? Connect it, install it in the system's printer settings, then run this again.")
+	}
+	fmt.Println()
+	current := firstOf(old.PrinterIP, old.PrinterName)
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		answer := in.ask("Printer: choose a number, or type a network printer's IP", "", current)
+		if answer == old.PrinterIP && answer != "" {
+			return old.PrinterIP, "", nil
+		}
+		var ip, name string
+		if ip, name, err = parsePrinterChoice(answer, printers); err == nil {
+			return ip, name, nil
+		}
+		fmt.Println("  ✗", err)
+	}
+	return "", "", err
+}
+
+func printerLabel(c *Config) string {
+	if c.PrinterIP != "" {
+		return "the printer at " + c.PrinterIP
+	}
+	return "printer " + c.PrinterName
+}
+
+func cmdPrinters() error {
+	printers, err := listPrinters()
+	if err != nil {
+		return err
+	}
+	if len(printers) == 0 {
+		fmt.Println("No printers are installed on this computer.")
+		return nil
+	}
+	for i, p := range printers {
+		fmt.Printf("%d) %-34s %s\n", i+1, p.Name, p.Connection)
+	}
 	return nil
 }
 
@@ -128,7 +206,11 @@ func cmdStatus() error {
 		senders = strings.Join(c.AllowedSenders, ", ")
 	}
 	fmt.Printf("Mailbox    : %s (%s)\n", c.Email, c.IMAPHost)
-	fmt.Printf("Printer    : %s (%s) - %s\n", c.PrinterIP, c.PrinterName, printerStatus(c))
+	printer := c.PrinterName
+	if c.PrinterIP != "" {
+		printer = c.PrinterIP + " (" + c.PrinterName + ")"
+	}
+	fmt.Printf("Printer    : %s - %s\n", printer, printerStatus(c))
 	fmt.Printf("Senders    : %s\n", senders)
 	fmt.Printf("Agent      : %s\n", serviceStatus())
 	fmt.Printf("Settings   : %s\n", configPath())

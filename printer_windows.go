@@ -19,6 +19,14 @@ func powershell(script string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+func listPrinters() ([]printerInfo, error) {
+	out, err := powershell(`Get-Printer | ForEach-Object { $_.Name + "|" + $_.PortName }`)
+	if err != nil {
+		return nil, fmt.Errorf("could not list printers: %s", out)
+	}
+	return parseWindowsPrinters(out), nil
+}
+
 // setupPrinter reuses a Windows printer already installed for this IP, or
 // adds one over IPP (Windows 11). Returns the Windows printer name.
 func setupPrinter(ip string) (string, error) {
@@ -33,7 +41,7 @@ $name`, ip, queueName)
 	if err != nil || out == "" {
 		return "", fmt.Errorf("could not add the printer automatically (%s).\n"+
 			"  Add it once in Windows: Settings > Bluetooth & devices > Printers & scanners > Add device\n"+
-			"  (or 'Add manually' with IP %s), then run the install command again", out, ip)
+			"  (or 'Add manually' with IP %s), then run the install command again and choose it from the list", out, ip)
 	}
 	lines := strings.Split(out, "\n")
 	return strings.TrimSpace(lines[len(lines)-1]), nil
