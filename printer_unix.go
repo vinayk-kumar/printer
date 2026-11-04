@@ -96,7 +96,18 @@ func printerHealth(c *Config) (state, problem string) {
 	if err != nil {
 		return "missing", "Not found on this computer"
 	}
-	return parseLpstatPrinter(string(out))
+	state, problem = parseLpstatPrinter(string(out))
+	if p := connectionProblem(c); p != "" {
+		state, problem = "problem", p
+	}
+	return state, problem
+}
+
+// printerDeviceURI is where CUPS sends the printer's jobs, e.g. ipp://192.168.1.5/ipp/print.
+func printerDeviceURI(c *Config) string {
+	out, _ := cups("lpstat", "-v", c.PrinterName).Output()
+	_, uri, _ := strings.Cut(strings.TrimSpace(string(out)), ": ")
+	return uri
 }
 
 // recoverPrinter resumes the queue when CUPS paused it after a printer error

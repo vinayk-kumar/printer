@@ -59,6 +59,27 @@ CREATE TABLE IF NOT EXISTS requests (
 	body     TEXT NOT NULL,
 	PRIMARY KEY (agent_id, id)
 );
+CREATE TABLE IF NOT EXISTS alert_state ( -- what was last alerted per agent
+	agent_id         TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+	offline          INTEGER NOT NULL DEFAULT 0,
+	printer_now      TEXT NOT NULL DEFAULT '',
+	printer_since    INTEGER NOT NULL DEFAULT 0,
+	printer_alerted  TEXT NOT NULL DEFAULT '',
+	mailbox_now      TEXT NOT NULL DEFAULT '',
+	mailbox_since    INTEGER NOT NULL DEFAULT 0,
+	mailbox_alerted  TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS alerts (
+	id       INTEGER PRIMARY KEY,
+	user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	agent_id TEXT NOT NULL,
+	level    TEXT NOT NULL, -- bad, warn or ok
+	title    TEXT NOT NULL,
+	message  TEXT NOT NULL,
+	at       INTEGER NOT NULL,
+	read_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS alerts_by_user ON alerts (user_id, id);
 CREATE TABLE IF NOT EXISTS commands (
 	id         TEXT PRIMARY KEY,
 	agent_id   TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -260,6 +281,9 @@ func (s *Store) SaveReport(agentID string, report json.RawMessage, requests []js
 		if _, err := tx.Exec(`UPDATE commands SET done_at = ? WHERE id = ? AND agent_id = ?`, now, id, agentID); err != nil {
 			return err
 		}
+	}
+	if err := s.alertOnReport(tx, agentID, report); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,7 +94,30 @@ func printerHealth(c *Config) (state, problem string) {
 	if err != nil || out == "" {
 		return "missing", "Not found on this computer"
 	}
-	return windowsPrinterHealth(out)
+	state, problem = windowsPrinterHealth(out)
+	if p := connectionProblem(c); p != "" {
+		state, problem = "problem", p
+	}
+	return state, problem
+}
+
+// printerDeviceURI describes the printer's port as a URI, e.g.
+// socket://192.168.1.5:9100 for a TCP/IP port, or the URL of an IPP port.
+// USB and WSD ports give "", and Windows' own status covers them.
+func printerDeviceURI(c *Config) string {
+	out, err := powershell(fmt.Sprintf(`$p = Get-Printer -Name '%s' -ErrorAction Stop
+$port = Get-PrinterPort -Name $p.PortName -ErrorAction SilentlyContinue
+if ($port.PrinterHostAddress) { 'socket://' + $port.PrinterHostAddress + ':' + $port.PortNumber } else { $p.PortName }`, psQuote(c.PrinterName)))
+	if err != nil {
+		return ""
+	}
+	if ip, ok := strings.CutPrefix(out, "IP_"); ok && net.ParseIP(ip) != nil {
+		return "socket://" + ip + ":9100"
+	}
+	if strings.Contains(out, "://") {
+		return out
+	}
+	return ""
 }
 
 func recoverPrinter(c *Config) {}

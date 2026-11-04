@@ -82,6 +82,13 @@ func (s *Server) Handler() http.Handler {
 		id, err := s.store.AddCommand(u.id, r.PathValue("id"), "test-print")
 		s.reply(w, map[string]string{"id": id}, err)
 	}))
+	mux.HandleFunc("GET /api/alerts", s.user(func(w http.ResponseWriter, r *http.Request, u user) {
+		list, unread, err := s.store.Alerts(u.id, 100)
+		s.reply(w, map[string]any{"alerts": list, "unread": unread}, err)
+	}))
+	mux.HandleFunc("POST /api/alerts/read", s.user(func(w http.ResponseWriter, r *http.Request, u user) {
+		s.reply(w, map[string]bool{"ok": true}, s.store.MarkAlertsRead(u.id))
+	}))
 	mux.HandleFunc("POST /api/pairing-code", s.user(func(w http.ResponseWriter, r *http.Request, u user) {
 		code, err := s.store.NewPairingCode(u.id, pairingTTL)
 		s.reply(w, map[string]any{"code": code, "expires_in": int(pairingTTL.Seconds())}, err)

@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -359,19 +358,6 @@ func installBinary() (string, error) {
 	}
 	out.Close()
 	return dst, os.Rename(tmp, dst)
-}
-
-func printerReachable(ip string) error {
-	var lastErr error
-	for _, port := range []string{"631", "9100", "80"} {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, port), 3*time.Second)
-		if err == nil {
-			conn.Close()
-			return nil
-		}
-		lastErr = err
-	}
-	return lastErr
 }
 
 func loginHint(c *Config) string {
