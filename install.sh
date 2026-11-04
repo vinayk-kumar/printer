@@ -31,9 +31,10 @@ if [ "$os" = linux ]; then
       echo "Install the CUPS printing system first, then run this again."
       exit 1
     fi
-    echo "Installing the CUPS printing system (asks for your password)..."
-    sudo apt-get update -qq <"$tty"
-    sudo apt-get install -y -qq cups <"$tty"
+    echo "Installing the CUPS printing system (asks for your password)."
+    echo "This downloads about 100 MB and can take 5-10 minutes on a Raspberry Pi..."
+    sudo apt-get update -q <"$tty"
+    sudo apt-get install -y -q cups <"$tty"
     sudo usermod -aG lpadmin "$(id -un)" <"$tty"
   fi
 
@@ -43,8 +44,8 @@ if [ "$os" = linux ]; then
     ! LC_ALL=C lpstat -v 2>/dev/null | grep -qE "usb:|hp:/usb"; then
     echo "An HP USB printer is connected but not set up yet."
     if ! command -v hp-setup >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-      echo "Installing HP's printer driver (hplip)..."
-      sudo apt-get install -y -qq hplip <"$tty"
+      echo "Installing HP's printer driver (hplip). This can take several minutes..."
+      sudo apt-get install -y -q hplip <"$tty"
     fi
     if command -v hp-setup >/dev/null 2>&1; then
       echo "Starting HP's printer setup. Choose the USB printer and accept the defaults."
