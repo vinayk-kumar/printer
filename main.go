@@ -1,5 +1,5 @@
 // Print Agent: prints PDF/JPG/PNG attachments of emails sent to a mailbox
-// on a network printer. Runs in the background on Windows, macOS and Linux.
+// on any printer this computer can print to. Runs in the background on Windows, macOS and Linux.
 package main
 
 import (
@@ -9,7 +9,7 @@ import (
 
 var version = "dev"
 
-const usage = `Print Agent %s - emails to a mailbox are printed on your network printer.
+const usage = `Print Agent %s - emails to a mailbox are printed on your printer.
 
 Usage:
   print-agent install      Set up mailbox + printer and start in the background
@@ -30,6 +30,9 @@ Install options (otherwise you are asked):
   --imap-host HOST         Mail server (auto-detected for Gmail, Yahoo, Zoho)
   --allowed-senders LIST   Comma-separated senders allowed to print (default: anyone)
   --poll-seconds N         How often to check the mailbox (default 15)
+  --no-replies             Don't email senders whether their file printed
+  --smtp-host HOST         Mail server for those replies (default: from --imap-host)
+  --status-port N          Port of the status page (default 8631, 0 = off)
   --yes                    Don't ask anything; fail if a value is missing
 `
 

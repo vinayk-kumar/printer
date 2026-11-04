@@ -43,13 +43,13 @@ func capturePrints(t *testing.T) *[]printed {
 	t.Helper()
 	var got []printed
 	orig := printFn
-	printFn = func(c *Config, path, title string) error {
+	printFn = func(c *Config, path, title string) (string, error) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		got = append(got, printed{title, string(data)})
-		return nil
+		return "job-" + title, nil
 	}
 	t.Cleanup(func() { printFn = orig })
 	return &got
@@ -57,12 +57,19 @@ func capturePrints(t *testing.T) *[]printed {
 
 func TestPrintsOnlyPrintableAttachments(t *testing.T) {
 	got := capturePrints(t)
-	if err := printAttachments(&Config{}, strings.NewReader(testEmail)); err != nil {
+	r, err := printAttachments(&Config{}, strings.NewReader(testEmail))
+	if err != nil {
 		t.Fatal(err)
 	}
 	want := []printed{{"invoice.pdf", "%PDF-1.4\n%%EOF\n"}, {"photo.JPG", "jpegdata"}}
 	if !reflect.DeepEqual(*got, want) {
 		t.Fatalf("printed %q, want %q", *got, want)
+	}
+	if r.From != "orders@example.com" || r.Subject != "Order 42" || r.Status != statusPrinting || len(r.Files) != 3 {
+		t.Fatalf("request = %+v", r)
+	}
+	if f := r.Files[1]; f.Name != "data.zip" || f.Status != statusIgnored {
+		t.Fatalf("zip file recorded as %+v, want skipped", f)
 	}
 }
 

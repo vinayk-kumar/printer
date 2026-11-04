@@ -118,32 +118,42 @@ func fetchAndPrint(cl *client.Client, c *Config, uid uint32) error {
 	if body == nil {
 		return fmt.Errorf("email has no body")
 	}
-	return printAttachments(c, body)
-}
-
-func printAttachments(c *Config, r io.Reader) error {
-	mr, err := mail.CreateReader(r)
+	r, err := printAttachments(c, body)
 	if err != nil {
 		return err
 	}
-	from := ""
-	if addrs, err := mr.Header.AddressList("From"); err == nil && len(addrs) > 0 {
-		from = strings.ToLower(addrs[0].Address)
+	saveRequest(r)
+	go followRequest(c, r)
+	return nil
+}
+
+// printAttachments sends the email's PDF/JPG/PNG files to the printer and
+// returns the record to follow them with.
+func printAttachments(c *Config, body io.Reader) (*printRequest, error) {
+	mr, err := mail.CreateReader(body)
+	if err != nil {
+		return nil, err
 	}
-	subject, _ := mr.Header.Subject()
-	if len(c.AllowedSenders) > 0 && !contains(c.AllowedSenders, from) {
-		log.Printf("Ignored email from %s (not an allowed sender)", from)
-		return nil
+	r := &printRequest{ID: newRequestID(), At: time.Now()}
+	if addrs, err := mr.Header.AddressList("From"); err == nil && len(addrs) > 0 {
+		r.From = strings.ToLower(addrs[0].Address)
+	}
+	r.Subject, _ = mr.Header.Subject()
+	r.messageID, _ = mr.Header.MessageID()
+	r.noReply = isAutomatic(mr.Header, r.From, c.Email)
+	if len(c.AllowedSenders) > 0 && !contains(c.AllowedSenders, r.From) {
+		log.Printf("Ignored email from %s (not an allowed sender)", r.From)
+		r.Status, r.Note, r.noReply = statusIgnored, "Not an allowed sender", true
+		return r, nil
 	}
 
-	printed := 0
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 		name := partFilename(part.Header)
 		if name == "" {
@@ -152,30 +162,35 @@ func printAttachments(c *Config, r io.Reader) error {
 		ext := strings.ToLower(filepath.Ext(name))
 		if !printable[ext] {
 			log.Printf("Skipped %s (only PDF, JPG and PNG are printed)", name)
+			r.Files = append(r.Files, printedFile{Name: name, Status: statusIgnored, Detail: "only PDF, JPG and PNG files are printed"})
 			continue
 		}
-		if err := printPart(c, part.Body, name, ext); err != nil {
+		job, err := printPart(c, part.Body, name, ext)
+		if err != nil {
 			log.Printf("Print failed for %s: %v", name, err)
+			r.Files = append(r.Files, printedFile{Name: name, Status: statusFailed, Detail: err.Error()})
 			continue
 		}
-		log.Printf("Printed %s from %s (subject: %q)", name, from, subject)
-		printed++
+		log.Printf("Sent %s from %s to the printer (subject: %q)", name, r.From, r.Subject)
+		r.Files = append(r.Files, printedFile{Name: name, Status: statusPrinting, job: job})
 	}
-	if printed == 0 {
-		log.Printf("No printable attachment in email from %s (subject: %q)", from, subject)
+	r.settle()
+	if r.Status == statusIgnored {
+		log.Printf("No printable attachment in email from %s (subject: %q)", r.From, r.Subject)
+		r.Note = "There was no PDF, JPG or PNG file attached."
 	}
-	return nil
+	return r, nil
 }
 
-func printPart(c *Config, body io.Reader, name, ext string) error {
+func printPart(c *Config, body io.Reader, name, ext string) (string, error) {
 	tmp, err := os.CreateTemp("", "print-agent-*"+ext)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := io.Copy(tmp, body); err != nil {
 		tmp.Close()
-		return err
+		return "", err
 	}
 	tmp.Close()
 	return printFn(c, tmp.Name(), name)

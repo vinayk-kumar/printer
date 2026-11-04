@@ -26,8 +26,13 @@ func runAgent() error {
 	defer f.Close()
 	log.SetOutput(io.MultiWriter(os.Stderr, f))
 	log.Printf("Print Agent %s started", version)
+	markUnfinished()
+	agentHealth.Lock()
+	agentHealth.started = time.Now()
+	agentHealth.Unlock()
 
 	lastErr := ""
+	pageStarted := false
 	for {
 		c, err := loadConfig()
 		if err != nil {
@@ -35,13 +40,26 @@ func runAgent() error {
 			time.Sleep(30 * time.Second)
 			continue
 		}
+		if !pageStarted {
+			if c.StatusKey == "" { // set up by an older version
+				c.StatusKey = newStatusKey()
+				_ = saveConfig(c)
+			}
+			startStatusPage(c)
+			pageStarted = true
+		}
 		recoverPrinter(c)
-		if err := pollOnce(c, loadState()); err != nil {
+		err = pollOnce(c, loadState())
+		if err != nil {
 			reportOnce(&lastErr, fmt.Sprintf("Mailbox check failed: %v", err))
 		} else if lastErr != "" {
 			log.Printf("Mailbox connection OK again")
 			lastErr = ""
 		}
+		agentHealth.Lock()
+		agentHealth.lastCheck = time.Now()
+		agentHealth.lastError = ifThen(err != nil, lastErr)
+		agentHealth.Unlock()
 		time.Sleep(time.Duration(c.PollSeconds) * time.Second)
 	}
 }

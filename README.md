@@ -75,7 +75,44 @@ curl -fsSL https://raw.githubusercontent.com/vinayk-kumar/printer/main/install.s
 | `--poll-seconds` | How often to check the mailbox. Default: 15 |
 | `--yes` | Don't ask anything |
 
-## What you need
+## Did it print? Status replies and the status page
+
+**Reply to the sender.** After each email, Print Agent replies to the sender from
+the printer's mailbox (same app password), in the same email thread:
+
+```
+✓ Printed
+
+  ✓ invoice.pdf: printed
+  – data.zip: skipped (only PDF, JPG and PNG files are printed)
+
+Printer: HP LaserJet M1005
+Received: 4 Nov 2026, 16:20
+```
+
+If the file is still in the printer queue after 2 minutes (out of paper, paper jam,
+printer off...), the reply says **Not printed yet** with the reason, and it prints
+as soon as the problem is fixed. Emails with no PDF/JPG/PNG get a "Nothing to print"
+reply. Newsletters, no-reply addresses and other automatic mail never get a reply,
+and senders that aren't allowed are ignored silently. Turn replies off with
+`--no-replies`.
+
+**Status page (phone app).** The installer and `print-agent status` show a link like
+`http://192.168.1.20:8631/?key=…`. Open it on a phone on the same Wi-Fi (or on the
+computer itself) to see:
+
+- the printer and whether it is ready or needs attention (out of paper, cover open...);
+- whether the agent is running and when it last checked the mailbox;
+- every email: printed, waiting (with the reason), failed or not printed, and per file;
+- a **Print a test page** button.
+
+On the phone, use the browser's **Add to Home screen** to keep it as an app. Keep the
+link private: anyone with it on your network can see sender addresses and subjects.
+Windows and macOS may ask once to allow Print Agent on the network; allow it for
+private networks. Use `--status-port N` for another port, or `--status-port 0` to
+turn the page off.
+
+
 
 | | |
 |---|---|
@@ -88,6 +125,11 @@ We recommend a **separate mailbox only for printing**, because every email with 
 attachment that reaches it will print (unless you set allowed senders).
 
 ## Connecting the printer
+
+**Any brand works**: HP, Canon, Epson, Brother, Samsung, Ricoh and others. Print Agent
+prints through the computer's own printing system, so any printer that computer can
+print to (USB or network) works. The only brand-specific part is a convenience on
+Linux: for an HP USB printer the installer also installs HP's driver for you.
 
 ### USB printers (e.g. HP LaserJet M1005)
 
