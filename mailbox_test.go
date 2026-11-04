@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,9 +34,15 @@ const testEmail = "From: Shop <Orders@Example.com>\r\n" +
 	"--b1\r\n" +
 	"Content-Type: image/jpeg; name=\"photo.JPG\"\r\n" +
 	"Content-Disposition: inline\r\n" +
+	"Content-Transfer-Encoding: base64\r\n" +
 	"\r\n" +
-	"jpegdata\r\n" +
+	"PHOTO\r\n" +
 	"--b1--\r\n"
+
+// testEmailWithPhoto is testEmail with a real JPEG as the photo.
+func testEmailWithPhoto(t *testing.T) string {
+	return strings.Replace(testEmail, "PHOTO", base64.StdEncoding.EncodeToString(testJPEG(t, 40, 20, 1)), 1)
+}
 
 type printed struct{ name, content string }
 
@@ -57,13 +64,15 @@ func capturePrints(t *testing.T) *[]printed {
 
 func TestPrintsOnlyPrintableAttachments(t *testing.T) {
 	got := capturePrints(t)
-	r, err := printAttachments(&Config{}, strings.NewReader(testEmail))
+	r, err := printAttachments(&Config{}, strings.NewReader(testEmailWithPhoto(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []printed{{"invoice.pdf", "%PDF-1.4\n%%EOF\n"}, {"photo.JPG", "jpegdata"}}
-	if !reflect.DeepEqual(*got, want) {
-		t.Fatalf("printed %q, want %q", *got, want)
+	if len(*got) != 2 || !reflect.DeepEqual((*got)[0], printed{"invoice.pdf", "%PDF-1.4\n%%EOF\n"}) {
+		t.Fatalf("printed %q", *got)
+	}
+	if photo := (*got)[1]; photo.name != "photo.JPG" || !strings.HasPrefix(photo.content, "%PDF-") {
+		t.Fatalf("the photo was not printed as a PDF: %q", photo.name)
 	}
 	if r.From != "orders@example.com" || r.Subject != "Order 42" || r.Status != statusPrinting || len(r.Files) != 3 {
 		t.Fatalf("request = %+v", r)
@@ -75,11 +84,11 @@ func TestPrintsOnlyPrintableAttachments(t *testing.T) {
 
 func TestAllowedSenders(t *testing.T) {
 	got := capturePrints(t)
-	printAttachments(&Config{AllowedSenders: []string{"someone@else.com"}}, strings.NewReader(testEmail))
+	printAttachments(&Config{AllowedSenders: []string{"someone@else.com"}}, strings.NewReader(testEmailWithPhoto(t)))
 	if len(*got) != 0 {
 		t.Fatalf("printed %q for a sender that is not allowed", *got)
 	}
-	printAttachments(&Config{AllowedSenders: splitList("someone@else.com, ORDERS@example.com")}, strings.NewReader(testEmail))
+	printAttachments(&Config{AllowedSenders: splitList("someone@else.com, ORDERS@example.com")}, strings.NewReader(testEmailWithPhoto(t)))
 	if len(*got) != 2 {
 		t.Fatalf("allowed sender (case-insensitive) printed %d files, want 2", len(*got))
 	}

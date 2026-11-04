@@ -183,16 +183,28 @@ func printAttachments(c *Config, body io.Reader) (*printRequest, error) {
 }
 
 func printPart(c *Config, body io.Reader, name, ext string) (string, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return "", err
+	}
+	if ext != ".pdf" {
+		if data, err = imageToPDF(data); err != nil {
+			return "", err
+		}
+		ext = ".pdf"
+	}
 	tmp, err := os.CreateTemp("", "print-agent-*"+ext)
 	if err != nil {
 		return "", err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := io.Copy(tmp, body); err != nil {
-		tmp.Close()
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return "", err
 	}
-	tmp.Close()
 	return printFn(c, tmp.Name(), name)
 }
 
