@@ -19,6 +19,8 @@ type Config struct {
 	NoReplies      bool     `json:"no_status_replies,omitempty"` // don't email senders the print result
 	StatusPort     int      `json:"status_port,omitempty"`       // status page port; -1 turns it off
 	StatusKey      string   `json:"status_key,omitempty"`        // secret in the status page link
+	CloudURL       string   `json:"cloud_url,omitempty"`         // cloud dashboard this agent reports to
+	CloudToken     string   `json:"cloud_token,omitempty"`
 }
 
 const defaultStatusPort = 8631

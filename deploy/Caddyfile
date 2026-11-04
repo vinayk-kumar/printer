@@ -1,0 +1,8 @@
+# Caddy gets and renews the HTTPS certificate for this name by itself.
+# Point the name's DNS A record at the VM first, and open ports 80 and 443.
+# Replace print.example.com with your own name, then:
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+print.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}

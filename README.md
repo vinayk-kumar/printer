@@ -112,7 +112,63 @@ Windows and macOS may ask once to allow Print Agent on the network; allow it for
 private networks. Use `--status-port N` for another port, or `--status-port 0` to
 turn the page off.
 
+## Check your printers from anywhere: the cloud dashboard
 
+The status page above works only on the office network. To check from anywhere, and
+see several offices in one place, run the **cloud dashboard**, `print-cloud`, on a
+small VM. Each office computer reports to it; you log in from any phone or browser.
+
+```
+Office PC (Print Agent) ──HTTPS, every 15 s──▶ print-cloud on a VM ◀── your phone, anywhere
+   printer state, emails and results               (login, all printers)
+   ◀── "print a test page"
+```
+
+The dashboard shows each printer: online or offline, ready or needing attention (out
+of paper, offline...), every email with its result, and a test-print button. It
+installs on the phone's home screen like an app.
+
+### Set up the VM (once)
+
+Any small Linux VM with a public IP works (1 vCPU and 512 MB RAM is plenty), plus a
+domain name pointing at it (e.g. `print.yourshop.com`: a DNS A record to the VM's IP).
+Ports 80 and 443 must be open.
+
+```bash
+# 1. The server
+curl -fsSL -o print-cloud https://github.com/vinayk-kumar/printer/releases/latest/download/print-cloud-linux-amd64
+sudo install print-cloud /usr/local/bin/
+sudo useradd --system --home-dir /var/lib/print-cloud --shell /usr/sbin/nologin print-cloud
+curl -fsSL -o print-cloud.service https://raw.githubusercontent.com/vinayk-kumar/printer/main/deploy/print-cloud.service
+sudo cp print-cloud.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now print-cloud
+
+# 2. HTTPS with Caddy, which gets the certificate by itself
+sudo apt install -y caddy
+printf 'print.yourshop.com {\n\treverse_proxy 127.0.0.1:8080\n}\n' | sudo tee /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+
+# 3. A login for you (run again to change the password)
+sudo -u print-cloud print-cloud set-user you@yourshop.com --db /var/lib/print-cloud/print-cloud.db
+```
+
+On an ARM VM, download `print-cloud-linux-arm64` instead.
+
+### Add an office printer
+
+1. Open `https://print.yourshop.com`, log in and tap **Add a printer**. It shows a
+   6-digit code and the command to run.
+2. On the office computer (Print Agent already installed), run that command:
+   ```bash
+   print-agent pair https://print.yourshop.com 123456
+   ```
+3. The printer appears on the dashboard within 15 seconds.
+
+`print-agent unpair` stops reporting; **Remove from dashboard** does the same from the
+web. The office computer only makes outgoing HTTPS connections, so nothing has to be
+opened on the office router. Sender addresses and subjects are stored on your VM.
+
+## What you need
 
 | | |
 |---|---|
@@ -179,6 +235,8 @@ The installer prints the program's full path. By default it is
 | `print-agent printers` | Printers installed on this computer |
 | `print-agent test-print` | Prints a test page |
 | `print-agent install` | Change settings |
+| `print-agent pair URL CODE` | Show this printer on your cloud dashboard |
+| `print-agent unpair` | Stop reporting to the cloud dashboard |
 | `print-agent uninstall` | Stop and remove the agent (`--purge` also deletes settings) |
 
 ## Troubleshooting
@@ -214,8 +272,14 @@ The installer prints the program's full path. By default it is
 ```bash
 go test ./...                 # tests
 go build -o print-agent .     # build for this computer
+go build ./cmd/print-cloud    # the cloud dashboard server
+
+# Try the dashboard locally (pairing accepts http:// for localhost only):
+PRINT_CLOUD_PASSWORD=test-pass ./print-cloud set-user me@test.com
+./print-cloud serve           # http://127.0.0.1:8080
 ```
 
 Release a new version: `git tag v0.1.1 && git push origin v0.1.1`. GitHub Actions
-tests, builds Windows/macOS/Linux binaries and attaches them to the release. The
+tests, builds the Windows/macOS/Linux agents and the Linux `print-cloud` server, and
+attaches them to the release. The
 install commands always download the latest release.

@@ -17,6 +17,9 @@ Usage:
   print-agent status       Show settings, printer and recent activity
   print-agent printers     List the printers installed on this computer
   print-agent test-print   Print a test page
+  print-agent pair URL CODE  Show this printer on a cloud dashboard (print-cloud),
+                           with the code from its "Add a printer" page
+  print-agent unpair       Stop reporting to the cloud dashboard
   print-agent uninstall    Stop and remove the agent (--purge also deletes settings)
   print-agent run          Run in the foreground (used by the background service)
   print-agent version
@@ -53,6 +56,10 @@ func main() {
 		err = cmdPrinters()
 	case "test-print":
 		err = cmdTestPrint()
+	case "pair":
+		err = cmdPair(os.Args[2:])
+	case "unpair":
+		err = cmdUnpair()
 	case "uninstall":
 		err = cmdUninstall(os.Args[2:])
 	case "version", "--version", "-v":

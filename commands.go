@@ -85,6 +85,7 @@ func cmdInstall(args []string) error {
 		}
 	}
 	c.StatusKey = firstOf(old.StatusKey, newStatusKey())
+	c.CloudURL, c.CloudToken = old.CloudURL, old.CloudToken
 	if (c.PrinterIP == "" && c.PrinterName == "") || c.Email == "" || !strings.Contains(c.Email, "@") || c.Password == "" {
 		return errors.New("a printer, mailbox email and app password are required (run in a terminal, or pass --printer or --printer-ip, --email and --password)")
 	}
@@ -244,6 +245,9 @@ func cmdStatus() error {
 	if u := statusURL(c); u != "" {
 		fmt.Printf("Status page: %s\n", u)
 	}
+	if c.CloudToken != "" {
+		fmt.Printf("Dashboard  : %s\n", c.CloudURL)
+	}
 	fmt.Printf("Settings   : %s\n", configPath())
 	fmt.Printf("Log        : %s\n", logPath())
 	if history := loadHistory(); len(history) > 0 {
@@ -288,7 +292,7 @@ func sendTestPage(c *Config) (string, error) {
 		"Time: " + time.Now().Format("2006-01-02 15:04:05"),
 	}))
 	tmp.Close()
-	return printFile(c, tmp.Name(), "Print Agent test page")
+	return printFn(c, tmp.Name(), "Print Agent test page")
 }
 
 func cmdUninstall(args []string) error {

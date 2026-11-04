@@ -1,21 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"log"
 	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/vinayk-kumar/printer/internal/appicon"
 )
 
 // The status page: a small web app (installable as a PWA) served by the
@@ -103,7 +101,7 @@ func statusHandler() http.Handler {
 		serveWeb(w, "web/sw.js", "text/javascript")
 	})
 	for _, size := range []int{180, 192, 512} {
-		data := iconPNG(size)
+		data := appicon.PNG(size)
 		mux.HandleFunc(fmt.Sprintf("GET /icon-%d.png", size), func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "image/png")
 			w.Header().Set("Cache-Control", "max-age=86400")
@@ -132,19 +130,24 @@ func statusHandler() http.Handler {
 			http.Error(w, `{"error":"not set up"}`, http.StatusServiceUnavailable)
 			return
 		}
-		req := &printRequest{ID: newRequestID(), At: time.Now(), Subject: "Test page", noReply: true}
-		job, err := sendTestPage(c)
-		if err != nil {
-			req.Files = []printedFile{{Name: "Test page", Status: statusFailed, Detail: err.Error()}}
-		} else {
-			req.Files = []printedFile{{Name: "Test page", Status: statusPrinting, job: job}}
-		}
-		req.settle()
-		saveRequest(req)
-		go followRequest(c, req)
-		writeJSONResponse(w, req)
+		writeJSONResponse(w, startTestPrint(c))
 	})
 	return mux
+}
+
+// startTestPrint prints a test page, records it in the history and follows it.
+func startTestPrint(c *Config) *printRequest {
+	req := &printRequest{ID: newRequestID(), At: time.Now(), Subject: "Test page", noReply: true}
+	job, err := sendTestPage(c)
+	if err != nil {
+		req.Files = []printedFile{{Name: "Test page", Status: statusFailed, Detail: err.Error()}}
+	} else {
+		req.Files = []printedFile{{Name: "Test page", Status: statusPrinting, job: job}}
+	}
+	req.settle()
+	saveRequest(req)
+	go followRequest(c, req)
+	return req
 }
 
 // authorized checks the status key, from the link (?key=) or the cookie it sets.
@@ -217,30 +220,6 @@ func writeJSONResponse(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// iconPNG draws the app icon: a white printer on teal (safe as a maskable icon).
-func iconPNG(size int) []byte {
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	teal := color.RGBA{0x0f, 0x76, 0x6e, 0xff}
-	white := color.RGBA{0xff, 0xff, 0xff, 0xff}
-	fill := func(x0, y0, x1, y1 float64, c color.RGBA) {
-		for y := int(y0 * float64(size)); y < int(y1*float64(size)); y++ {
-			for x := int(x0 * float64(size)); x < int(x1*float64(size)); x++ {
-				img.SetRGBA(x, y, c)
-			}
-		}
-	}
-	fill(0, 0, 1, 1, teal)
-	fill(0.34, 0.24, 0.66, 0.36, white) // paper going in
-	fill(0.24, 0.38, 0.76, 0.62, white) // printer body
-	fill(0.32, 0.54, 0.68, 0.57, teal)  // paper slot
-	fill(0.34, 0.57, 0.66, 0.76, white) // printed page
-	fill(0.39, 0.62, 0.61, 0.64, teal)  // text lines
-	fill(0.39, 0.67, 0.55, 0.69, teal)
-	var b bytes.Buffer
-	_ = png.Encode(&b, img)
-	return b.Bytes()
 }
 
 const lockedPage = `<!doctype html><html lang="en"><head><meta charset="utf-8">

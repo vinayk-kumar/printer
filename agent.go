@@ -33,6 +33,7 @@ func runAgent() error {
 
 	lastErr := ""
 	pageStarted := false
+	var cloud cloudSync
 	for {
 		c, err := loadConfig()
 		if err != nil {
@@ -60,6 +61,7 @@ func runAgent() error {
 		agentHealth.lastCheck = time.Now()
 		agentHealth.lastError = ifThen(err != nil, lastErr)
 		agentHealth.Unlock()
+		cloud.report(c)
 		time.Sleep(time.Duration(c.PollSeconds) * time.Second)
 	}
 }

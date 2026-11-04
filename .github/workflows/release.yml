@@ -29,6 +29,12 @@ jobs:
               -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
               -o "dist/print-agent-$os-$arch$ext" .
           done
+          # The cloud dashboard server, for a Linux VM.
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "dist/print-cloud-linux-$arch" ./cmd/print-cloud
+          done
           ls -l dist
       - uses: softprops/action-gh-release@v2
         with:
