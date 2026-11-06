@@ -239,6 +239,85 @@ The installer prints the program's full path. By default it is
 | `print-agent unpair` | Stop reporting to the cloud dashboard |
 | `print-agent uninstall` | Stop and remove the agent (`--purge` also deletes settings) |
 
+## Check that it is running
+
+**Linux / Raspberry Pi** (should print `active`):
+```bash
+systemctl --user is-active print-agent
+```
+
+**Any system**: the `Agent` line should say `running`, and the output also shows the
+printer's state and recent emails.
+```bash
+~/.local/bin/print-agent status                               # Linux, macOS
+```
+```powershell
+& "$env:LOCALAPPDATA\PrintAgent\print-agent.exe" status       # Windows
+```
+
+**See what it is doing** (Linux; Ctrl+C to stop; `status` shows the log's path on other systems):
+```bash
+tail -f ~/.config/print-agent/agent.log
+```
+
+**Check the whole path**: email a PDF to the mailbox from another address. It should
+print within about 30 seconds, and the sender should get a reply. To test only the
+printer, run `print-agent test-print`, which prints a real page.
+
+If you run the cloud dashboard, check it on the VM (should print `ok`):
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+## Uninstall
+
+### Print Agent
+
+**Linux / Raspberry Pi / macOS:**
+```bash
+~/.local/bin/print-agent uninstall --purge
+```
+
+**Windows** (PowerShell):
+```powershell
+& "$env:LOCALAPPDATA\PrintAgent\print-agent.exe" uninstall --purge
+Remove-Item -Recurse "$env:LOCALAPPDATA\PrintAgent"
+```
+
+`--purge` also deletes the settings (including the saved app password), the print
+history and the log, and this can't be undone. Without it, the settings stay, so you
+can reinstall without entering them again.
+
+Then finish up:
+
+1. **Delete the app password** at <https://myaccount.google.com/apppasswords> (or your
+   mail provider's equivalent).
+2. **If the printer was on a dashboard**, remove it there too.
+3. **Linux, optional:** run `loginctl disable-linger` if nothing else of yours needs to
+   keep running after you log out. The agent turned this setting on.
+4. **Linux, confirm it's gone** (should print `inactive`):
+   ```bash
+   systemctl --user is-active print-agent
+   ```
+
+**What stays:** emails in the mailbox, CUPS and HP's driver, and printers you installed
+yourself. Only the `PrintAgent` queue the agent added for a printer given by IP is removed.
+
+### Cloud dashboard (on the VM)
+
+This deletes all dashboard data: logins, printers and history.
+
+```bash
+sudo systemctl disable --now print-cloud
+sudo rm /etc/systemd/system/print-cloud.service /usr/local/bin/print-cloud
+sudo systemctl daemon-reload
+sudo rm -rf /var/lib/print-cloud
+sudo userdel print-cloud
+```
+
+Also remove the dashboard's site from `/etc/caddy/Caddyfile`, then run
+`sudo systemctl reload caddy`. To remove Caddy too: `sudo apt remove caddy`.
+
 ## Troubleshooting
 
 | Problem | Fix |
