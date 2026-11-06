@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,6 +24,9 @@ func cmdInstall(args []string) error {
 	imapHost := fs.String("imap-host", "", "")
 	allowed := fs.String("allowed-senders", "", "")
 	poll := fs.Int("poll-seconds", 0, "")
+	smtpHostFlag := fs.String("smtp-host", "", "")
+	noReplies := fs.Bool("no-replies", false, "")
+	statusPort := fs.Int("status-port", 0, "")
 	yes := fs.Bool("yes", false, "")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -69,6 +71,20 @@ func cmdInstall(args []string) error {
 	} else if old.PollSeconds >= 5 {
 		c.PollSeconds = old.PollSeconds
 	}
+	c.SMTPHost = firstOf(*smtpHostFlag, ifThen(sameMailbox, old.SMTPHost))
+	c.NoReplies = old.NoReplies
+	if given["no-replies"] {
+		c.NoReplies = *noReplies
+	}
+	c.StatusPort = old.StatusPort
+	if given["status-port"] {
+		c.StatusPort = *statusPort
+		if *statusPort == 0 {
+			c.StatusPort = -1 // off
+		}
+	}
+	c.StatusKey = firstOf(old.StatusKey, newStatusKey())
+	c.CloudURL, c.CloudToken = old.CloudURL, old.CloudToken
 	if (c.PrinterIP == "" && c.PrinterName == "") || c.Email == "" || !strings.Contains(c.Email, "@") || c.Password == "" {
 		return errors.New("a printer, mailbox email and app password are required (run in a terminal, or pass --printer or --printer-ip, --email and --password)")
 	}
@@ -127,12 +143,19 @@ func cmdInstall(args []string) error {
 	fmt.Printf(`
 Done! Emails with a PDF, JPG or PNG attached sent to %s
 will now print on %s.
-
+`, c.Email, printerLabel(c))
+	if !c.NoReplies {
+		fmt.Println("Each sender gets an email reply saying whether their file printed.")
+	}
+	if u := statusURL(c); u != "" {
+		fmt.Printf("\nStatus page (open on a phone on the same Wi-Fi, or on this computer):\n  %s\n", u)
+	}
+	fmt.Printf(`
   Check status : %s status
   Test page    : %s test-print
   Change setup : run the install command again
   Remove       : %s uninstall
-`, c.Email, printerLabel(c), exe, exe, exe)
+`, exe, exe, exe)
 	return nil
 }
 
@@ -213,8 +236,28 @@ func cmdStatus() error {
 	fmt.Printf("Printer    : %s - %s\n", printer, printerStatus(c))
 	fmt.Printf("Senders    : %s\n", senders)
 	fmt.Printf("Agent      : %s\n", serviceStatus())
+	replies := "off"
+	if !c.NoReplies {
+		replies = "on (sent through " + smtpHost(c) + ")"
+	}
+	fmt.Printf("Replies    : %s\n", replies)
+	if u := statusURL(c); u != "" {
+		fmt.Printf("Status page: %s\n", u)
+	}
+	if c.CloudToken != "" {
+		fmt.Printf("Dashboard  : %s\n", c.CloudURL)
+	}
 	fmt.Printf("Settings   : %s\n", configPath())
 	fmt.Printf("Log        : %s\n", logPath())
+	if history := loadHistory(); len(history) > 0 {
+		fmt.Println("\nRecent emails:")
+		for i, r := range history {
+			if i == 5 {
+				break
+			}
+			fmt.Printf("  %s  %-8s  %s  %q\n", r.At.Format("02 Jan 15:04"), r.Status, firstOf(r.From, "status page"), r.Subject)
+		}
+	}
 	fmt.Println("\nRecent activity:")
 	for _, line := range tail(logPath(), 10) {
 		fmt.Println("  " + line)
@@ -227,23 +270,28 @@ func cmdTestPrint() error {
 	if err != nil {
 		return errors.New("not set up yet. Run: print-agent install")
 	}
+	if _, err := sendTestPage(c); err != nil {
+		return err
+	}
+	fmt.Println("✓ Test page sent to the printer")
+	return nil
+}
+
+// sendTestPage prints a test page and returns its print job.
+func sendTestPage(c *Config) (string, error) {
 	tmp, err := os.CreateTemp("", "print-agent-test-*.pdf")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.Remove(tmp.Name())
 	tmp.Write(testPagePDF([]string{
 		"Print Agent test page",
 		"Mailbox: " + c.Email,
-		"Printer: " + c.PrinterIP,
+		"Printer: " + firstOf(c.PrinterIP, c.PrinterName),
 		"Time: " + time.Now().Format("2006-01-02 15:04:05"),
 	}))
 	tmp.Close()
-	if err := printFile(c, tmp.Name(), "Print Agent test page"); err != nil {
-		return err
-	}
-	fmt.Println("✓ Test page sent to the printer")
-	return nil
+	return printFn(c, tmp.Name(), "Print Agent test page")
 }
 
 func cmdUninstall(args []string) error {
@@ -310,19 +358,6 @@ func installBinary() (string, error) {
 	}
 	out.Close()
 	return dst, os.Rename(tmp, dst)
-}
-
-func printerReachable(ip string) error {
-	var lastErr error
-	for _, port := range []string{"631", "9100", "80"} {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, port), 3*time.Second)
-		if err == nil {
-			conn.Close()
-			return nil
-		}
-		lastErr = err
-	}
-	return lastErr
 }
 
 func loginHint(c *Config) string {

@@ -57,12 +57,57 @@ func setupPrinter(ip string) (string, error) {
 		"otherwise install it in the system's printer settings and choose it from the list)", strings.TrimSpace(string(out)))
 }
 
-func printFile(c *Config, path, title string) error {
+// printFile queues the file and returns the CUPS job id, e.g. "HP_M126nw-12".
+func printFile(c *Config, path, title string) (string, error) {
 	out, err := cups("lp", "-d", c.PrinterName, "-t", title, path).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
-	return nil
+	// "request id is HP_M126nw-12 (1 file(s))"
+	if f := strings.Fields(string(out)); len(f) >= 4 && f[0] == "request" {
+		return f[3], nil
+	}
+	return "", nil
+}
+
+// jobState tells whether a print job is still waiting in the queue, and
+// what is wrong with the printer if something is.
+func jobState(c *Config, job string) (busy bool, problem string) {
+	if job == "" {
+		return false, ""
+	}
+	out, err := cups("lpstat", "-W", "not-completed", "-o", c.PrinterName).Output()
+	if err != nil {
+		return true, "The printing system is not responding"
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if f := strings.Fields(line); len(f) > 0 && f[0] == job {
+			_, problem := printerHealth(c)
+			return true, problem
+		}
+	}
+	return false, ""
+}
+
+// printerHealth returns "ready", "printing", "problem" or "missing", and the
+// problem in plain words.
+func printerHealth(c *Config) (state, problem string) {
+	out, err := cups("lpstat", "-l", "-p", c.PrinterName).Output()
+	if err != nil {
+		return "missing", "Not found on this computer"
+	}
+	state, problem = parseLpstatPrinter(string(out))
+	if p := connectionProblem(c); p != "" {
+		state, problem = "problem", p
+	}
+	return state, problem
+}
+
+// printerDeviceURI is where CUPS sends the printer's jobs, e.g. ipp://192.168.1.5/ipp/print.
+func printerDeviceURI(c *Config) string {
+	out, _ := cups("lpstat", "-v", c.PrinterName).Output()
+	_, uri, _ := strings.Cut(strings.TrimSpace(string(out)), ": ")
+	return uri
 }
 
 // recoverPrinter resumes the queue when CUPS paused it after a printer error

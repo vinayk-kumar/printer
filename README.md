@@ -75,6 +75,99 @@ curl -fsSL https://raw.githubusercontent.com/vinayk-kumar/printer/main/install.s
 | `--poll-seconds` | How often to check the mailbox. Default: 15 |
 | `--yes` | Don't ask anything |
 
+## Did it print? Status replies and the status page
+
+**Reply to the sender.** After each email, Print Agent replies to the sender from
+the printer's mailbox (same app password), in the same email thread:
+
+```
+✓ Printed
+
+  ✓ invoice.pdf: printed
+  – data.zip: skipped (only PDF, JPG and PNG files are printed)
+
+Printer: HP LaserJet M1005
+Received: 4 Nov 2026, 16:20
+```
+
+If the file is still in the printer queue after 2 minutes (out of paper, paper jam,
+printer off...), the reply says **Not printed yet** with the reason, and it prints
+as soon as the problem is fixed. Emails with no PDF/JPG/PNG get a "Nothing to print"
+reply. Newsletters, no-reply addresses and other automatic mail never get a reply,
+and senders that aren't allowed are ignored silently. Turn replies off with
+`--no-replies`.
+
+**Status page (phone app).** The installer and `print-agent status` show a link like
+`http://192.168.1.20:8631/?key=…`. Open it on a phone on the same Wi-Fi (or on the
+computer itself) to see:
+
+- the printer and whether it is ready or needs attention (out of paper, cover open...);
+- whether the agent is running and when it last checked the mailbox;
+- every email: printed, waiting (with the reason), failed or not printed, and per file;
+- a **Print a test page** button.
+
+On the phone, use the browser's **Add to Home screen** to keep it as an app. Keep the
+link private: anyone with it on your network can see sender addresses and subjects.
+Windows and macOS may ask once to allow Print Agent on the network; allow it for
+private networks. Use `--status-port N` for another port, or `--status-port 0` to
+turn the page off.
+
+## Check your printers from anywhere: the cloud dashboard
+
+The status page above works only on the office network. To check from anywhere, and
+see several offices in one place, run the **cloud dashboard**, `print-cloud`, on a
+small VM. Each office computer reports to it; you log in from any phone or browser.
+
+```
+Office PC (Print Agent) ──HTTPS, every 15 s──▶ print-cloud on a VM ◀── your phone, anywhere
+   printer state, emails and results               (login, all printers)
+   ◀── "print a test page"
+```
+
+The dashboard shows each printer: online or offline, ready or needing attention (out
+of paper, offline...), every email with its result, and a test-print button. It
+installs on the phone's home screen like an app.
+
+### Set up the VM (once)
+
+Any small Linux VM with a public IP works (1 vCPU and 512 MB RAM is plenty), plus a
+domain name pointing at it (e.g. `print.yourshop.com`: a DNS A record to the VM's IP).
+Ports 80 and 443 must be open.
+
+```bash
+# 1. The server
+curl -fsSL -o print-cloud https://github.com/vinayk-kumar/printer/releases/latest/download/print-cloud-linux-amd64
+sudo install print-cloud /usr/local/bin/
+sudo useradd --system --home-dir /var/lib/print-cloud --shell /usr/sbin/nologin print-cloud
+curl -fsSL -o print-cloud.service https://raw.githubusercontent.com/vinayk-kumar/printer/main/deploy/print-cloud.service
+sudo cp print-cloud.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now print-cloud
+
+# 2. HTTPS with Caddy, which gets the certificate by itself
+sudo apt install -y caddy
+printf 'print.yourshop.com {\n\treverse_proxy 127.0.0.1:8080\n}\n' | sudo tee /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+
+# 3. A login for you (run again to change the password)
+sudo -u print-cloud print-cloud set-user you@yourshop.com --db /var/lib/print-cloud/print-cloud.db
+```
+
+On an ARM VM, download `print-cloud-linux-arm64` instead.
+
+### Add an office printer
+
+1. Open `https://print.yourshop.com`, log in and tap **Add a printer**. It shows a
+   6-digit code and the command to run.
+2. On the office computer (Print Agent already installed), run that command:
+   ```bash
+   print-agent pair https://print.yourshop.com 123456
+   ```
+3. The printer appears on the dashboard within 15 seconds.
+
+`print-agent unpair` stops reporting; **Remove from dashboard** does the same from the
+web. The office computer only makes outgoing HTTPS connections, so nothing has to be
+opened on the office router. Sender addresses and subjects are stored on your VM.
+
 ## What you need
 
 | | |
@@ -88,6 +181,11 @@ We recommend a **separate mailbox only for printing**, because every email with 
 attachment that reaches it will print (unless you set allowed senders).
 
 ## Connecting the printer
+
+**Any brand works**: HP, Canon, Epson, Brother, Samsung, Ricoh and others. Print Agent
+prints through the computer's own printing system, so any printer that computer can
+print to (USB or network) works. The only brand-specific part is a convenience on
+Linux: for an HP USB printer the installer also installs HP's driver for you.
 
 ### USB printers (e.g. HP LaserJet M1005)
 
@@ -137,7 +235,88 @@ The installer prints the program's full path. By default it is
 | `print-agent printers` | Printers installed on this computer |
 | `print-agent test-print` | Prints a test page |
 | `print-agent install` | Change settings |
+| `print-agent pair URL CODE` | Show this printer on your cloud dashboard |
+| `print-agent unpair` | Stop reporting to the cloud dashboard |
 | `print-agent uninstall` | Stop and remove the agent (`--purge` also deletes settings) |
+
+## Check that it is running
+
+**Linux / Raspberry Pi** (should print `active`):
+```bash
+systemctl --user is-active print-agent
+```
+
+**Any system**: the `Agent` line should say `running`, and the output also shows the
+printer's state and recent emails.
+```bash
+~/.local/bin/print-agent status                               # Linux, macOS
+```
+```powershell
+& "$env:LOCALAPPDATA\PrintAgent\print-agent.exe" status       # Windows
+```
+
+**See what it is doing** (Linux; Ctrl+C to stop; `status` shows the log's path on other systems):
+```bash
+tail -f ~/.config/print-agent/agent.log
+```
+
+**Check the whole path**: email a PDF to the mailbox from another address. It should
+print within about 30 seconds, and the sender should get a reply. To test only the
+printer, run `print-agent test-print`, which prints a real page.
+
+If you run the cloud dashboard, check it on the VM (should print `ok`):
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+## Uninstall
+
+### Print Agent
+
+**Linux / Raspberry Pi / macOS:**
+```bash
+~/.local/bin/print-agent uninstall --purge
+```
+
+**Windows** (PowerShell):
+```powershell
+& "$env:LOCALAPPDATA\PrintAgent\print-agent.exe" uninstall --purge
+Remove-Item -Recurse "$env:LOCALAPPDATA\PrintAgent"
+```
+
+`--purge` also deletes the settings (including the saved app password), the print
+history and the log, and this can't be undone. Without it, the settings stay, so you
+can reinstall without entering them again.
+
+Then finish up:
+
+1. **Delete the app password** at <https://myaccount.google.com/apppasswords> (or your
+   mail provider's equivalent).
+2. **If the printer was on a dashboard**, remove it there too.
+3. **Linux, optional:** run `loginctl disable-linger` if nothing else of yours needs to
+   keep running after you log out. The agent turned this setting on.
+4. **Linux, confirm it's gone** (should print `inactive`):
+   ```bash
+   systemctl --user is-active print-agent
+   ```
+
+**What stays:** emails in the mailbox, CUPS and HP's driver, and printers you installed
+yourself. Only the `PrintAgent` queue the agent added for a printer given by IP is removed.
+
+### Cloud dashboard (on the VM)
+
+This deletes all dashboard data: logins, printers and history.
+
+```bash
+sudo systemctl disable --now print-cloud
+sudo rm /etc/systemd/system/print-cloud.service /usr/local/bin/print-cloud
+sudo systemctl daemon-reload
+sudo rm -rf /var/lib/print-cloud
+sudo userdel print-cloud
+```
+
+Also remove the dashboard's site from `/etc/caddy/Caddyfile`, then run
+`sudo systemctl reload caddy`. To remove Caddy too: `sudo apt remove caddy`.
 
 ## Troubleshooting
 
@@ -172,8 +351,14 @@ The installer prints the program's full path. By default it is
 ```bash
 go test ./...                 # tests
 go build -o print-agent .     # build for this computer
+go build ./cmd/print-cloud    # the cloud dashboard server
+
+# Try the dashboard locally (pairing accepts http:// for localhost only):
+PRINT_CLOUD_PASSWORD=test-pass ./print-cloud set-user me@test.com
+./print-cloud serve           # http://127.0.0.1:8080
 ```
 
 Release a new version: `git tag v0.1.1 && git push origin v0.1.1`. GitHub Actions
-tests, builds Windows/macOS/Linux binaries and attaches them to the release. The
+tests, builds the Windows/macOS/Linux agents and the Linux `print-cloud` server, and
+attaches them to the release. The
 install commands always download the latest release.

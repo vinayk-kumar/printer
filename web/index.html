@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Print Agent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>Print Agent</title>
+<style>
+:root {
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --text: #0f172a;
+  --muted: #64748b;
+  --line: #e7ebf1;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 4px 16px rgba(15, 23, 42, .06);
+  --printer: #0f766e;  --printer-soft: #ccfbf1;
+  --ok: #15803d;       --ok-soft: #dcfce7;
+  --wait: #b45309;     --wait-soft: #fef3c7;
+  --bad: #b91c1c;      --bad-soft: #fee2e2;
+  --info: #1d4ed8;     --info-soft: #dbeafe;
+  --off: #64748b;      --off-soft: #eef2f7;
+  --brand-a: #0f766e;  --brand-b: #0e7490;
+  --shimmer: #edf1f6;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1120; --surface: #131b2e; --surface-2: #18223a; --text: #e5e9f0; --muted: #94a3b8;
+    --line: #23304a; --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+    --printer: #2dd4bf; --printer-soft: #123b3a; --ok: #4ade80; --ok-soft: #13341f;
+    --wait: #fbbf24; --wait-soft: #3a2c0e; --bad: #f87171; --bad-soft: #3d1717;
+    --info: #60a5fa; --info-soft: #172a4a; --off: #94a3b8; --off-soft: #1e293b;
+    --shimmer: #1c2740; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.wrap { max-width: 560px; margin: 0 auto; padding: 0 16px; }
+
+/* Top bar */
+.top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line);
+  padding-top: env(safe-area-inset-top); }
+.top .wrap { display: flex; align-items: center; gap: 12px; height: 60px; }
+.top h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+.top .sub { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top .titles { flex: 1; min-width: 0; }
+.icon-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+  display: grid; place-items: center; transition: transform .12s, background .12s; }
+.icon-btn:active { transform: scale(.94); background: var(--surface-2); }
+.icon-btn.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Banner */
+.banner { margin-top: 12px; border-radius: 12px; padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start;
+  background: var(--bad-soft); color: var(--bad); font-size: 14px; }
+.banner[hidden] { display: none; }
+
+/* Cards */
+.card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); margin-top: 14px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 6px; }
+.card-head h2 { font-size: 15px; margin: 0; }
+.card-head .hint { font-size: 12.5px; color: var(--muted); }
+
+/* Printer card */
+.printer { padding: 16px; display: grid; gap: 14px; }
+.printer-row { display: flex; align-items: center; gap: 12px; }
+.badge-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none; }
+.badge-icon svg { width: 22px; height: 22px; }
+.printer .name { font-weight: 650; font-size: 16px; overflow-wrap: anywhere; }
+.printer .conn { font-size: 13px; color: var(--muted); }
+.problem { border-radius: 12px; padding: 10px 12px; font-size: 14px; display: flex; gap: 8px; align-items: flex-start;
+  background: var(--wait-soft); color: var(--wait); }
+.problem[hidden] { display: none; }
+.agent-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+  border-top: 1px solid var(--line); padding-top: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--off); }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.dot.wait { background: var(--wait); box-shadow: 0 0 0 3px var(--wait-soft); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+
+/* Pills */
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 9px;
+  border-radius: 999px; white-space: nowrap; }
+.pill svg { width: 13px; height: 13px; stroke-width: 2.5; }
+.t-printed { background: var(--ok-soft); color: var(--ok); }
+.t-printing { background: var(--info-soft); color: var(--info); }
+.t-waiting { background: var(--wait-soft); color: var(--wait); }
+.t-failed { background: var(--bad-soft); color: var(--bad); }
+.t-ignored { background: var(--off-soft); color: var(--off); }
+.t-printer { background: var(--printer-soft); color: var(--printer); }
+.t-ready { background: var(--ok-soft); color: var(--ok); }
+.t-problem { background: var(--wait-soft); color: var(--wait); }
+.t-missing { background: var(--bad-soft); color: var(--bad); }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+.stat { background: var(--surface); border: 0; border-radius: 14px; box-shadow: var(--shadow); padding: 12px; text-align: left;
+  transition: transform .12s; outline-offset: 2px; }
+.stat:active { transform: scale(.97); }
+.stat .n { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.stat .l svg { width: 14px; height: 14px; }
+.stat.ok .n { color: var(--ok); } .stat.wait .n { color: var(--wait); } .stat.bad .n { color: var(--bad); }
+
+/* Filters */
+.filters { display: flex; gap: 8px; padding: 6px 16px 10px; overflow-x: auto; scrollbar-width: none; }
+.filters::-webkit-scrollbar { display: none; }
+.filter { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 13px;
+  font-size: 13px; font-weight: 550; white-space: nowrap; }
+.filter[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+
+/* Email list */
+.list { list-style: none; margin: 0; padding: 0 0 6px; }
+.row { border-top: 1px solid var(--line); }
+.row > button { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; background: none; border: 0;
+  padding: 12px 16px; }
+.row > button:active { background: var(--surface-2); }
+.row .main { flex: 1; min-width: 0; }
+.row .subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .badge-icon { width: 38px; height: 38px; border-radius: 10px; }
+.row .badge-icon svg { width: 19px; height: 19px; }
+.detail { padding: 0 16px 14px 66px; display: grid; gap: 8px; font-size: 13.5px; }
+.detail[hidden] { display: none; }
+.file { display: flex; gap: 8px; align-items: flex-start; background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
+.file .fname { font-weight: 550; overflow-wrap: anywhere; }
+.file .why { color: var(--muted); font-size: 12.5px; }
+.file > div { flex: 1; min-width: 0; }
+.note { color: var(--muted); font-size: 12.5px; display: flex; gap: 6px; align-items: center; }
+.note svg { width: 14px; height: 14px; }
+.empty { padding: 28px 16px 30px; text-align: center; color: var(--muted); }
+.empty svg { width: 30px; height: 30px; color: var(--printer); margin-bottom: 6px; }
+.more { display: block; width: calc(100% - 32px); margin: 4px 16px 12px; padding: 9px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface); font-weight: 600; font-size: 13.5px; }
+.more[hidden] { display: none; }
+
+/* Main button */
+.primary { margin-top: 16px; width: 100%; height: 50px; border: 0; border-radius: 14px; color: #fff; font-weight: 650;
+  font-size: 15.5px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b)); box-shadow: 0 6px 16px rgba(15, 118, 110, .28);
+  transition: transform .12s, opacity .12s; }
+.primary:active { transform: scale(.98); }
+.primary:disabled { opacity: .6; }
+
+/* Settings */
+.kv { margin: 0; padding: 4px 16px 10px; }
+.kv div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.kv div:first-child { border-top: 0; }
+.kv dt { color: var(--muted); flex: none; }
+.kv dd { margin: 0; text-align: right; overflow-wrap: anywhere; min-width: 0; }
+.foot { text-align: center; font-size: 12px; color: var(--muted); margin-top: 18px; }
+
+/* Loading */
+.sk { background: linear-gradient(90deg, var(--shimmer) 25%, var(--surface-2) 50%, var(--shimmer) 75%);
+  background-size: 200% 100%; animation: shimmer 1.3s infinite; border-radius: 8px; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+  background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: 12px; font-size: 14px;
+  opacity: 0; transition: .2s; pointer-events: none; max-width: calc(100% - 32px); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="titles">
+      <h1>Print Agent</h1>
+      <div class="sub" id="mailbox">&nbsp;</div>
+    </div>
+    <button class="icon-btn" id="refresh" aria-label="Refresh"><svg><use href="#i-refresh"/></svg></button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="banner" id="offline" hidden>
+    <svg><use href="#i-wifi-off"/></svg>
+    <div><b>Can't reach Print Agent.</b> Is the computer on, and is this phone on the same Wi-Fi?</div>
+  </div>
+
+  <section class="card printer" id="printer">
+    <div class="printer-row">
+      <div class="badge-icon t-printer"><svg><use href="#i-printer"/></svg></div>
+      <div style="flex:1;min-width:0">
+        <div class="name" id="p-name"><span class="sk" style="display:inline-block;width:140px;height:18px"></span></div>
+        <div class="conn" id="p-conn">&nbsp;</div>
+      </div>
+      <span id="p-state"></span>
+    </div>
+    <div class="problem" id="p-problem" hidden><svg><use href="#i-alert"/></svg><div></div></div>
+    <div class="agent-line"><span class="dot" id="a-dot"></span><span id="a-text">Connecting…</span></div>
+  </section>
+
+  <div class="stats">
+    <button class="stat ok" data-filter="printed"><div class="n" id="n-printed">–</div><div class="l"><svg><use href="#i-check"/></svg>Printed today</div></button>
+    <button class="stat wait" data-filter="waiting"><div class="n" id="n-waiting">–</div><div class="l"><svg><use href="#i-clock"/></svg>Waiting</div></button>
+    <button class="stat bad" data-filter="failed"><div class="n" id="n-failed">–</div><div class="l"><svg><use href="#i-x"/></svg>Failed today</div></button>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h2>Recent emails</h2><span class="hint" id="count"></span></div>
+    <div class="filters" role="group" aria-label="Filter">
+      <button class="filter" data-filter="all" aria-pressed="true">All</button>
+      <button class="filter" data-filter="printed" aria-pressed="false">Printed</button>
+      <button class="filter" data-filter="waiting" aria-pressed="false">Waiting</button>
+      <button class="filter" data-filter="failed" aria-pressed="false">Failed</button>
+      <button class="filter" data-filter="ignored" aria-pressed="false">Not printed</button>
+    </div>
+    <ul class="list" id="list">
+      <li class="row" style="padding:12px 16px;display:flex;gap:12px"><span class="sk" style="width:38px;height:38px"></span><span style="flex:1;display:grid;gap:6px"><span class="sk" style="height:14px;width:70%"></span><span class="sk" style="height:12px;width:45%"></span></span></li>
+      <li class="row" style="padding:12px 16px;display:flex;gap:12px"><span class="sk" style="width:38px;height:38px"></span><span style="flex:1;display:grid;gap:6px"><span class="sk" style="height:14px;width:60%"></span><span class="sk" style="height:12px;width:40%"></span></span></li>
+    </ul>
+    <button class="more" id="more" hidden>Load more</button>
+  </section>
+
+  <button class="primary" id="test"><svg><use href="#i-printer"/></svg>Print a test page</button>
+
+  <section class="card">
+    <div class="card-head"><h2>Settings</h2><span class="hint">Change with the install command</span></div>
+    <dl class="kv">
+      <div><dt>Mailbox</dt><dd id="s-mailbox">–</dd></div>
+      <div><dt>Prints emails from</dt><dd id="s-senders">–</dd></div>
+      <div><dt>Checks mail every</dt><dd id="s-poll">–</dd></div>
+      <div><dt>Reply to sender</dt><dd id="s-replies">–</dd></div>
+    </dl>
+  </section>
+  <p class="foot" id="version"></p>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="i-reply" viewBox="0 0 24 24"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></symbol>
+  <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M8.5 16.43a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"/><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"/><path d="M5 13a10 10 0 0 1 5.24-2.76"/><path d="m2 2 20 20"/></symbol>
+</svg>
+
+<script>
+"use strict";
+const STATUS = {
+  printed:  { label: "Printed",         icon: "i-check" },
+  printing: { label: "Sent to printer", icon: "i-send" },
+  waiting:  { label: "Waiting",         icon: "i-clock" },
+  failed:   { label: "Failed",          icon: "i-x" },
+  ignored:  { label: "Not printed",     icon: "i-minus" },
+};
+const PRINTER = {
+  ready: "Ready", printing: "Printing", problem: "Needs attention", missing: "Not found",
+};
+const PAGE = 20;
+let data = null, filter = "all", shown = PAGE, open = new Set(), timer = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const icon = (id) => `<svg><use href="#${id}"/></svg>`;
+const pill = (cls, text, ic) => `<span class="pill t-${cls}">${ic ? icon(ic) : ""}${esc(text)}</span>`;
+
+function ago(iso) {
+  const t = new Date(iso), s = (Date.now() - t) / 1000;
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  const time = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (new Date().toDateString() === t.toDateString()) return `Today ${time}`;
+  return `${t.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
+}
+const isToday = (iso) => new Date(iso).toDateString() === new Date().toDateString();
+const group = (s) => (s === "printing" ? "waiting" : s);
+
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+async function load(manual) {
+  if (manual) $("refresh").classList.add("spin");
+  try {
+    const res = await fetch("/api/status", { cache: "no-store" });
+    if (res.status === 401) { location.reload(); return; }
+    if (!res.ok) throw new Error(res.status);
+    data = await res.json();
+    $("offline").hidden = true;
+    render();
+  } catch {
+    $("offline").hidden = false;
+    $("a-dot").className = "dot bad";
+    $("a-text").textContent = "Not connected";
+  } finally {
+    $("refresh").classList.remove("spin");
+  }
+}
+
+function render() {
+  const d = data;
+  $("mailbox").textContent = d.mailbox;
+
+  // Printer
+  $("p-name").textContent = d.printer;
+  $("p-conn").textContent = d.printer_ip ? `Network printer · ${d.printer_ip}` : "Installed on this computer";
+  $("p-state").innerHTML = pill(d.printer_state, PRINTER[d.printer_state] || d.printer_state);
+  const prob = $("p-problem");
+  prob.hidden = !d.printer_problem;
+  prob.querySelector("div").textContent = d.printer_problem || "";
+
+  // Agent
+  const checked = d.last_check ? (Date.now() - new Date(d.last_check)) / 1000 : Infinity;
+  const late = checked > d.poll_seconds * 3 + 60;
+  if (d.mailbox_error) {
+    $("a-dot").className = "dot wait";
+    $("a-text").textContent = d.mailbox_error;
+  } else if (!d.last_check || late) {
+    $("a-dot").className = "dot wait";
+    $("a-text").textContent = d.last_check ? `Last mailbox check ${ago(d.last_check)}` : "Starting…";
+  } else {
+    $("a-dot").className = "dot ok";
+    $("a-text").textContent = `Running · checked mail ${ago(d.last_check)}`;
+  }
+
+  // Counts
+  const reqs = d.requests;
+  $("n-printed").textContent = reqs.filter((r) => r.status === "printed" && isToday(r.at)).length;
+  $("n-waiting").textContent = reqs.filter((r) => group(r.status) === "waiting").length;
+  $("n-failed").textContent = reqs.filter((r) => r.status === "failed" && isToday(r.at)).length;
+
+  // List
+  const list = reqs.filter((r) => filter === "all" || group(r.status) === filter);
+  $("count").textContent = list.length ? `${list.length} email${list.length === 1 ? "" : "s"}` : "";
+  if (!list.length) {
+    $("list").innerHTML = `<li class="empty">${icon("i-mail")}<div>${
+      reqs.length ? "Nothing here." : `No emails yet. Send a PDF to <b>${esc(d.mailbox)}</b> and it shows up here.`
+    }</div></li>`;
+  } else {
+    $("list").innerHTML = list.slice(0, shown).map(rowHTML).join("");
+  }
+  $("more").hidden = list.length <= shown;
+
+  // Settings
+  $("s-mailbox").textContent = d.mailbox;
+  $("s-senders").textContent = d.senders.length ? d.senders.join(", ") : "Anyone";
+  $("s-poll").textContent = `${d.poll_seconds} seconds`;
+  $("s-replies").textContent = d.replies ? "On" : "Off";
+  $("version").textContent = `Print Agent ${d.version}`;
+}
+
+function rowHTML(r) {
+  const st = STATUS[r.status] || STATUS.ignored;
+  const isOpen = open.has(r.id);
+  const files = (r.files || []).map((f) => {
+    const fs = STATUS[f.status] || STATUS.ignored;
+    return `<div class="file"><span class="pill t-${f.status}">${icon(fs.icon)}</span><div>
+      <div class="fname">${esc(f.name)}</div>
+      <div class="why">${esc(fs.label)}${f.detail ? " · " + esc(f.detail) : ""}</div></div></div>`;
+  }).join("");
+  const notes = [];
+  if (r.note) notes.push(`<div class="note">${icon("i-alert")}${esc(r.note)}</div>`);
+  if (r.reply_error) notes.push(`<div class="note">${icon("i-reply")}Reply not sent: ${esc(r.reply_error)}</div>`);
+  else if (r.replied) notes.push(`<div class="note">${icon("i-reply")}Status reply sent to the sender</div>`);
+  return `<li class="row">
+    <button aria-expanded="${isOpen}" data-id="${esc(r.id)}">
+      <div class="badge-icon t-${r.status}">${icon(r.from ? "i-mail" : "i-printer")}</div>
+      <div class="main">
+        <div class="subject">${esc(r.subject || "(no subject)")}</div>
+        <div class="meta">${esc(r.from || "From this page")} · ${esc(ago(r.at))}</div>
+      </div>
+      ${pill(r.status, st.label)}
+    </button>
+    <div class="detail" ${isOpen ? "" : "hidden"}>${files}${notes.join("")}</div>
+  </li>`;
+}
+
+function setFilter(f) {
+  filter = filter === f && f !== "all" ? "all" : f;
+  shown = PAGE;
+  document.querySelectorAll(".filter").forEach((b) => b.setAttribute("aria-pressed", b.dataset.filter === filter));
+  if (data) render();
+}
+
+$("list").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-id]");
+  if (!b) return;
+  const id = b.dataset.id;
+  open.has(id) ? open.delete(id) : open.add(id);
+  b.setAttribute("aria-expanded", open.has(id));
+  b.nextElementSibling.hidden = !open.has(id);
+});
+document.querySelectorAll("[data-filter]").forEach((b) => b.addEventListener("click", () => setFilter(b.dataset.filter)));
+$("more").addEventListener("click", () => { shown += PAGE; render(); });
+$("refresh").addEventListener("click", () => load(true));
+$("test").addEventListener("click", async () => {
+  const btn = $("test");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/test-print", { method: "POST" });
+    if (!res.ok) throw new Error();
+    const r = await res.json();
+    toast(r.status === "failed" ? "Test page failed. See the list below." : "Test page sent to the printer");
+    open.add(r.id);
+    await load();
+  } catch {
+    toast("Couldn't reach Print Agent");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function schedule() {
+  clearInterval(timer);
+  if (document.visibilityState === "visible") timer = setInterval(load, 5000);
+}
+document.addEventListener("visibilitychange", () => {
+  schedule();
+  if (document.visibilityState === "visible") load();
+});
+load();
+schedule();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+</script>
+</body>
+</html>

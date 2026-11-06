@@ -15,7 +15,15 @@ type Config struct {
 	PrinterName    string   `json:"printer_name"` // OS print queue created for PrinterIP
 	AllowedSenders []string `json:"allowed_senders"`
 	PollSeconds    int      `json:"poll_seconds"`
+	SMTPHost       string   `json:"smtp_host,omitempty"`         // for status replies; default from IMAPHost
+	NoReplies      bool     `json:"no_status_replies,omitempty"` // don't email senders the print result
+	StatusPort     int      `json:"status_port,omitempty"`       // status page port; -1 turns it off
+	StatusKey      string   `json:"status_key,omitempty"`        // secret in the status page link
+	CloudURL       string   `json:"cloud_url,omitempty"`         // cloud dashboard this agent reports to
+	CloudToken     string   `json:"cloud_token,omitempty"`
 }
+
+const defaultStatusPort = 8631
 
 // mailboxState remembers the last email handled, so each email prints once
 // and emails already in the inbox at setup time are never printed.
@@ -44,6 +52,19 @@ func guessIMAPHost(email string) string {
 	return "imap." + domain
 }
 
+// smtpHost is the mail server used to send status replies.
+func smtpHost(c *Config) string {
+	switch {
+	case c.SMTPHost != "":
+		return c.SMTPHost
+	case c.IMAPHost == "outlook.office365.com":
+		return "smtp.office365.com"
+	case strings.HasPrefix(c.IMAPHost, "imap."):
+		return "smtp." + strings.TrimPrefix(c.IMAPHost, "imap.")
+	}
+	return c.IMAPHost
+}
+
 func configDir() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -55,6 +76,7 @@ func configDir() string {
 func configPath() string { return filepath.Join(configDir(), "config.json") }
 func statePath() string  { return filepath.Join(configDir(), "state.json") }
 func logPath() string    { return filepath.Join(configDir(), "agent.log") }
+func historyPath() string { return filepath.Join(configDir(), "history.json") }
 
 func loadConfig() (*Config, error) {
 	data, err := os.ReadFile(configPath())
@@ -67,6 +89,9 @@ func loadConfig() (*Config, error) {
 	}
 	if c.PollSeconds < 5 {
 		c.PollSeconds = 15
+	}
+	if c.StatusPort == 0 {
+		c.StatusPort = defaultStatusPort
 	}
 	return &c, nil
 }

@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,20 +48,76 @@ $name`, ip, queueName)
 	return strings.TrimSpace(lines[len(lines)-1]), nil
 }
 
-func printFile(c *Config, path, title string) error {
+// printFile prints through SumatraPDF and returns the file's name, which is
+// the document name of the Windows print job.
+func printFile(c *Config, path, title string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return err
+		return "", err
 	}
 	sumatra := filepath.Join(filepath.Dir(exe), "SumatraPDF.exe")
 	if _, err := os.Stat(sumatra); err != nil {
-		return fmt.Errorf("SumatraPDF.exe is missing next to print-agent.exe; run the installer again")
+		return "", fmt.Errorf("SumatraPDF.exe is missing next to print-agent.exe; run the installer again")
 	}
 	out, err := exec.Command(sumatra, "-print-to", c.PrinterName, "-print-settings", "fit", "-silent", path).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("SumatraPDF: %v %s", err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("SumatraPDF: %v %s", err, strings.TrimSpace(string(out)))
 	}
-	return nil
+	return filepath.Base(path), nil
+}
+
+// psQuote quotes a value for a single-quoted PowerShell string.
+func psQuote(s string) string { return strings.ReplaceAll(s, "'", "''") }
+
+// jobState tells whether a print job is still in the Windows print queue,
+// and what is wrong with the printer if something is.
+func jobState(c *Config, job string) (busy bool, problem string) {
+	if job == "" {
+		return false, ""
+	}
+	out, err := powershell(fmt.Sprintf(`Get-PrintJob -PrinterName '%s' | Where-Object { $_.DocumentName -like '*%s*' } | ForEach-Object { [string]$_.JobStatus }`,
+		psQuote(c.PrinterName), psQuote(job)))
+	if err != nil || out == "" {
+		return false, ""
+	}
+	_, problem = printerHealth(c)
+	if problem == "" && (strings.Contains(out, "Error") || strings.Contains(out, "Blocked") || strings.Contains(out, "UserIntervention")) {
+		problem = "Printer error (" + out + ")"
+	}
+	return true, problem
+}
+
+// printerHealth returns "ready", "printing", "problem" or "missing", and the
+// problem in plain words.
+func printerHealth(c *Config) (state, problem string) {
+	out, err := powershell(fmt.Sprintf(`[string](Get-Printer -Name '%s' -ErrorAction Stop).PrinterStatus`, psQuote(c.PrinterName)))
+	if err != nil || out == "" {
+		return "missing", "Not found on this computer"
+	}
+	state, problem = windowsPrinterHealth(out)
+	if p := connectionProblem(c); p != "" {
+		state, problem = "problem", p
+	}
+	return state, problem
+}
+
+// printerDeviceURI describes the printer's port as a URI, e.g.
+// socket://192.168.1.5:9100 for a TCP/IP port, or the URL of an IPP port.
+// USB and WSD ports give "", and Windows' own status covers them.
+func printerDeviceURI(c *Config) string {
+	out, err := powershell(fmt.Sprintf(`$p = Get-Printer -Name '%s' -ErrorAction Stop
+$port = Get-PrinterPort -Name $p.PortName -ErrorAction SilentlyContinue
+if ($port.PrinterHostAddress) { 'socket://' + $port.PrinterHostAddress + ':' + $port.PortNumber } else { $p.PortName }`, psQuote(c.PrinterName)))
+	if err != nil {
+		return ""
+	}
+	if ip, ok := strings.CutPrefix(out, "IP_"); ok && net.ParseIP(ip) != nil {
+		return "socket://" + ip + ":9100"
+	}
+	if strings.Contains(out, "://") {
+		return out
+	}
+	return ""
 }
 
 func recoverPrinter(c *Config) {}

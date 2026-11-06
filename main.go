@@ -1,5 +1,5 @@
 // Print Agent: prints PDF/JPG/PNG attachments of emails sent to a mailbox
-// on a network printer. Runs in the background on Windows, macOS and Linux.
+// on any printer this computer can print to. Runs in the background on Windows, macOS and Linux.
 package main
 
 import (
@@ -9,7 +9,7 @@ import (
 
 var version = "dev"
 
-const usage = `Print Agent %s - emails to a mailbox are printed on your network printer.
+const usage = `Print Agent %s - emails to a mailbox are printed on your printer.
 
 Usage:
   print-agent install      Set up mailbox + printer and start in the background
@@ -17,6 +17,9 @@ Usage:
   print-agent status       Show settings, printer and recent activity
   print-agent printers     List the printers installed on this computer
   print-agent test-print   Print a test page
+  print-agent pair URL CODE  Show this printer on a cloud dashboard (print-cloud),
+                           with the code from its "Add a printer" page
+  print-agent unpair       Stop reporting to the cloud dashboard
   print-agent uninstall    Stop and remove the agent (--purge also deletes settings)
   print-agent run          Run in the foreground (used by the background service)
   print-agent version
@@ -30,6 +33,9 @@ Install options (otherwise you are asked):
   --imap-host HOST         Mail server (auto-detected for Gmail, Yahoo, Zoho)
   --allowed-senders LIST   Comma-separated senders allowed to print (default: anyone)
   --poll-seconds N         How often to check the mailbox (default 15)
+  --no-replies             Don't email senders whether their file printed
+  --smtp-host HOST         Mail server for those replies (default: from --imap-host)
+  --status-port N          Port of the status page (default 8631, 0 = off)
   --yes                    Don't ask anything; fail if a value is missing
 `
 
@@ -50,6 +56,10 @@ func main() {
 		err = cmdPrinters()
 	case "test-print":
 		err = cmdTestPrint()
+	case "pair":
+		err = cmdPair(os.Args[2:])
+	case "unpair":
+		err = cmdUnpair()
 	case "uninstall":
 		err = cmdUninstall(os.Args[2:])
 	case "version", "--version", "-v":
